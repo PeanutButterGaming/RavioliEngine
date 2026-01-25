@@ -20,6 +20,9 @@ option(RAVENGINE_MSVC_FAST_DEBUG_ITERATORS "Set iterator debug level to 0 (MSVC 
 option(RAVENGINE_PROFILE_ALL_BUILDS "If disabled, instrumentation is only available in the Profile configuration" OFF)
 option(RAVENGINE_MSVC_DEBUG_ALL_BUILDS "Enable debugging support in all configurations" OFF)
 
+# Option to enable / disable Dear ImGui support (editor UI)
+option(RAVENGINE_USE_IMGUI "Enable Dear ImGui for the Editor UI" ON)
+
 if (NOT RAVENGINE_ASSETS_DIR)
 	set(RAVENGINE_ASSETS_DIR "${CMAKE_BINARY_DIR}" CACHE FILEPATH "")
 else()
@@ -31,7 +34,7 @@ else()
 endif()
 
 #IMGUI
-# Add ImGui files
+# Add ImGui files (core)
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 add_library(imgui STATIC
     ${IMGUI_DIR}/imgui.cpp
@@ -41,6 +44,47 @@ add_library(imgui STATIC
     ${IMGUI_DIR}/imgui_demo.cpp
 )
 target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+
+# Add backend/platform implementation files if available (SDL, OpenGL3, Vulkan, Metal)
+# This makes the imgui target more usable for the editor without forcing a specific backend.
+set(IMGUI_BACKENDS "")
+
+if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_sdl.cpp")
+	list(APPEND IMGUI_BACKENDS
+		"${IMGUI_DIR}/backends/imgui_impl_sdl.cpp"
+		"${IMGUI_DIR}/backends/imgui_impl_sdl.h"
+	)
+endif()
+
+if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp")
+	list(APPEND IMGUI_BACKENDS
+		"${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+		"${IMGUI_DIR}/backends/imgui_impl_opengl3.h"
+	)
+endif()
+
+if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp")
+	list(APPEND IMGUI_BACKENDS
+		"${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
+		"${IMGUI_DIR}/backends/imgui_impl_vulkan.h"
+	)
+endif()
+
+if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_metal.mm")
+	list(APPEND IMGUI_BACKENDS
+		"${IMGUI_DIR}/backends/imgui_impl_metal.mm"
+		"${IMGUI_DIR}/backends/imgui_impl_metal.h"
+	)
+endif()
+
+if(IMGUI_BACKENDS)
+	target_sources(imgui PRIVATE ${IMGUI_BACKENDS})
+	# Make backend headers available to consumers as well
+	target_include_directories(imgui PUBLIC "${IMGUI_DIR}/backends")
+endif()
+
+# Optional helper alias so other CMakeLists can reference ImGui consistently
+add_library(ImGui::ImGui ALIAS imgui)
 
 #endIMGUI
 # ban in-source builds
@@ -61,7 +105,7 @@ elseif(EMSCRIPTEN)
 	add_definitions(-fexceptions)
 
 	target_link_libraries("${PROJECT_NAME}" PUBLIC
-	"-fexceptions" "-s MAX_WEBGL_VERSION=2" "-s MIN_WEBGL_VERSION=2" "-s FULL_ES3=1" "-s USE_WEBGPU" "-s GL_ASSERTIONS=1" "-s OFFSCREEN_FRAMEBUFFER=1" "-s OFFSCREENCANVAS_SUPPORT=1" "-s GL_DEBUG=1" "-s LLD_REPORT_UNDEFINED" "-s NO_DISABLE_EXCEPTION_CATCHING" "-s NO_DISABLE_EXCEPTION_THROWING" "-s PTHREAD_POOL_SIZE=4" "-s ASSERTIONS=1" "-s ALLOW_MEMORY_GROWTH=1" "-s MAXIMUM_MEMORY=4GB"
+	"-fexceptions" "-s MAX_WEBGL_VERSION=2" "-s MIN_WEBGL_VERSION=2" "-s FULL_ES3=1" "-s USE_WEBGPU" "-s GL_ASSERTIONS=1" "-s OFFSCREEN_FRAMEBUFFER=1" "-s OFFSCREENCANVAS_SUPPORT=1" "-s GL_DEBUG=1" "-s L[...]
 	)
 endif()
 
@@ -131,7 +175,7 @@ if (RVE_CROSSCOMP AND NOT RAVENGINE_SERVER)
 		set(rglc_path "${TOOLS_DIR}/RGL/Release/rglc${rglc_ext}" CACHE INTERNAL "")
   		set(FlatBuffers_EXECUTABLE "${TOOLS_DIR}/flatc/Release/flatc")
 		set(RVESC_PATH "${TOOLS_DIR}/RVESC/Release/rvesc" CACHE INTERNAL "")
-		set(RVEMC_PATH "${TOOLS_DIR}/rvemc/Release/rvemc" CACHE INTERNAL "")
+		set(RVEMC_PATH "${TOOLS_DIR}/RVEMC/Release/rvemc" CACHE INTERNAL "")
 		set(RVEAC_PATH "${TOOLS_DIR}/rveac/Release/rveac" CACHE INTERNAL "")
 		set(RVESKC_PATH "${TOOLS_DIR}/rveskc/Release/rveskc" CACHE INTERNAL "")
 		set(ST_DXC_EXE_PATH "${TOOLS_DIR}/RGL/deps/ShaderTranspiler/deps/DirectXShaderCompiler/Release/bin/dxc.exe" CACHE INTERNAL "")
@@ -220,6 +264,11 @@ source_group("CMake" FILES ${RVE_CMAKES})
 add_library("${PROJECT_NAME}" ${HEADERS} ${SOURCES} ${MM_SOURCES} ${NATVIS} ${SHADERS} ${RVE_CMAKES})
 rve_enable_IPO(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME} PUBLIC RMLUI_USE_CUSTOM_RTTI=1)
+
+# Link ImGui into the main project if using ImGui and not building server
+if (RAVENGINE_USE_IMGUI AND NOT RAVENGINE_SERVER)
+	target_link_libraries("${PROJECT_NAME}" PUBLIC imgui)
+endif()
 
 if (NOT RAVENGINE_SERVER)
 	# link freetype (disable freetype dependencies since we do not need them)
