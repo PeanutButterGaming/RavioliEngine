@@ -20,9 +20,6 @@ option(RAVENGINE_MSVC_FAST_DEBUG_ITERATORS "Set iterator debug level to 0 (MSVC 
 option(RAVENGINE_PROFILE_ALL_BUILDS "If disabled, instrumentation is only available in the Profile configuration" OFF)
 option(RAVENGINE_MSVC_DEBUG_ALL_BUILDS "Enable debugging support in all configurations" OFF)
 
-# Option to enable / disable Dear ImGui support (editor UI)
-option(RAVENGINE_USE_IMGUI "Enable Dear ImGui for the Editor UI" ON)
-
 if (NOT RAVENGINE_ASSETS_DIR)
 	set(RAVENGINE_ASSETS_DIR "${CMAKE_BINARY_DIR}" CACHE FILEPATH "")
 else()
@@ -34,7 +31,7 @@ else()
 endif()
 
 #IMGUI
-# Add ImGui files (core)
+# Add ImGui files
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 add_library(imgui STATIC
     ${IMGUI_DIR}/imgui.cpp
@@ -44,47 +41,6 @@ add_library(imgui STATIC
     ${IMGUI_DIR}/imgui_demo.cpp
 )
 target_include_directories(imgui PUBLIC ${IMGUI_DIR})
-
-# Add backend/platform implementation files if available (SDL, OpenGL3, Vulkan, Metal)
-# This makes the imgui target more usable for the editor without forcing a specific backend.
-set(IMGUI_BACKENDS "")
-
-if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_sdl.cpp")
-	list(APPEND IMGUI_BACKENDS
-		"${IMGUI_DIR}/backends/imgui_impl_sdl.cpp"
-		"${IMGUI_DIR}/backends/imgui_impl_sdl.h"
-	)
-endif()
-
-if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp")
-	list(APPEND IMGUI_BACKENDS
-		"${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
-		"${IMGUI_DIR}/backends/imgui_impl_opengl3.h"
-	)
-endif()
-
-if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp")
-	list(APPEND IMGUI_BACKENDS
-		"${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
-		"${IMGUI_DIR}/backends/imgui_impl_vulkan.h"
-	)
-endif()
-
-if(EXISTS "${IMGUI_DIR}/backends/imgui_impl_metal.mm")
-	list(APPEND IMGUI_BACKENDS
-		"${IMGUI_DIR}/backends/imgui_impl_metal.mm"
-		"${IMGUI_DIR}/backends/imgui_impl_metal.h"
-	)
-endif()
-
-if(IMGUI_BACKENDS)
-	target_sources(imgui PRIVATE ${IMGUI_BACKENDS})
-	# Make backend headers available to consumers as well
-	target_include_directories(imgui PUBLIC "${IMGUI_DIR}/backends")
-endif()
-
-# Optional helper alias so other CMakeLists can reference ImGui consistently
-add_library(ImGui::ImGui ALIAS imgui)
 
 #endIMGUI
 # ban in-source builds
@@ -247,7 +203,8 @@ if(APPLE)
 		COMPILE_FLAGS "-x objective-c++ "
 	)
 endif()
-file(GLOB SOURCES "src/*.cpp" "src/*.hpp")
+# NOTE: switched to recursive glob so new editor subdir (src/editor/**) and other nested folders are picked up
+file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.hpp")
 file(GLOB_RECURSE NATVIS "deps/*.natvis")
 file(GLOB HEADERS "include/${PROJECT_NAME}/*.h" "include/${PROJECT_NAME}/*.hpp" )
 file(GLOB SHADERS
@@ -265,8 +222,9 @@ add_library("${PROJECT_NAME}" ${HEADERS} ${SOURCES} ${MM_SOURCES} ${NATVIS} ${SH
 rve_enable_IPO(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME} PUBLIC RMLUI_USE_CUSTOM_RTTI=1)
 
-# Link ImGui into the main project if using ImGui and not building server
-if (RAVENGINE_USE_IMGUI AND NOT RAVENGINE_SERVER)
+# Link ImGui into the main project so Editor UI files can use ImGui
+# Only link when imgui target exists and not building the headless server
+if (TARGET imgui AND NOT RAVENGINE_SERVER)
 	target_link_libraries("${PROJECT_NAME}" PUBLIC imgui)
 endif()
 
