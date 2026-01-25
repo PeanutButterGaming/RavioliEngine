@@ -5,8 +5,7 @@ project(RavEngine)
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_BINARY_DIR})
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps")
-set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}"
-"${DEPS_DIR}")
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" "${DEPS_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIGURATION>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIGURATION>)
 set(CMAKE_XCODE_VERSION "12.0.0" CACHE INTERNAL "")
@@ -25,12 +24,9 @@ if (NOT RAVENGINE_ASSETS_DIR)
 else()
 	message("RAVENGINE_ASSETS_DIR overridden to ${RAVENGINE_ASSETS_DIR}")
 	file(MAKE_DIRECTORY "${RAVENGINE_ASSETS_DIR}")
-#	if (NOT ASSETS_DIR_MADE)
-#		message(FATAL_ERROR "Failed to create directory ${RAVENGINE_ASSETS_DIR}")
-#	endif()
 endif()
 
-# IMGUI
+# ================= IMGUI ===================
 # Add ImGui core files and automatically include any available backends from deps/imgui/backends
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 add_library(imgui STATIC
@@ -42,52 +38,42 @@ add_library(imgui STATIC
 )
 target_include_directories(imgui PUBLIC ${IMGUI_DIR})
 
-# auto-include available backends (SDL / OpenGL3 / Vulkan / Metal / Win32 / DX11 / DX12 if present)
+# Auto-discover and add ImGui backend implementation files if they exist.
 set(IMGUI_BACKENDS_DIR "${IMGUI_DIR}/backends")
 set(IMGUI_BACKEND_SOURCES "")
 if(EXISTS "${IMGUI_BACKENDS_DIR}")
-	# Common backends we care about; add more if needed
-	set(CANDIDATE_BACKENDS
-		"imgui_impl_sdl.cpp;imgui_impl_sdl.h"
-		"imgui_impl_opengl3.cpp;imgui_impl_opengl3.h"
-		"imgui_impl_vulkan.cpp;imgui_impl_vulkan.h"
-		"imgui_impl_metal.mm;imgui_impl_metal.h"
-		"imgui_impl_win32.cpp;imgui_impl_win32.h"
-		"imgui_impl_dx11.cpp;imgui_impl_dx11.h"
-		"imgui_impl_dx12.cpp;imgui_impl_dx12.h"
-	)
-	foreach(pair ${CANDIDATE_BACKENDS})
-		string(REPLACE ";" "|" pair_pipe "${pair}")
-		string(REPLACE "|" ";" pair_list "${pair_pipe}")
-		list(GET pair_list 0 backend_src)
-		list(GET pair_list 1 backend_hdr)
-		if(EXISTS "${IMGUI_BACKENDS_DIR}/${backend_src}")
-			list(APPEND IMGUI_BACKEND_SOURCES "${IMGUI_BACKENDS_DIR}/${backend_src}")
-			# also add header as a source so IDEs show it; mark header as HEADER_FILE_ONLY later if desired
-			if(EXISTS "${IMGUI_BACKENDS_DIR}/${backend_hdr}")
-				list(APPEND IMGUI_BACKEND_SOURCES "${IMGUI_BACKENDS_DIR}/${backend_hdr}")
+	# backend short names to probe; metal uses .mm implementation
+	set(IMGUI_BACKEND_NAMES sdl opengl3 vulkan metal win32 dx11 dx12)
+
+	foreach(backend ${IMGUI_BACKEND_NAMES})
+		if(backend STREQUAL "metal")
+			set(impl_src "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.mm")
+		else()
+			set(impl_src "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.cpp")
+		endif()
+		set(impl_hdr "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.h")
+
+		if(EXISTS "${impl_src}")
+			list(APPEND IMGUI_BACKEND_SOURCES "${impl_src}")
+			if(EXISTS "${impl_hdr}")
+				list(APPEND IMGUI_BACKEND_SOURCES "${impl_hdr}")
 			endif()
 		endif()
 	endforeach()
 endif()
 
 if(IMGUI_BACKEND_SOURCES)
-	# make sure imgui target picks them up
 	target_sources(imgui PRIVATE ${IMGUI_BACKEND_SOURCES})
-	# expose backend headers to consumers
-	if(EXISTS "${IMGUI_BACKENDS_DIR}")
-		target_include_directories(imgui PUBLIC "${IMGUI_BACKENDS_DIR}")
-	endif()
-	# If Metal backend is included (.mm), mark it as ObjC++ so it compiles properly on Apple
+	target_include_directories(imgui PUBLIC "${IMGUI_BACKENDS_DIR}")
+	# Ensure Metal implementation compiles as ObjC++
 	if(EXISTS "${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm")
 		set_source_files_properties("${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm" PROPERTIES LANGUAGE OBJCXX)
 	endif()
 endif()
 
-# Add an alias for convenience
+# Convenience alias for other CMakeLists
 add_library(ImGui::ImGui ALIAS imgui)
-
-# end IMGUI
+# ===========================================
 
 # ban in-source builds
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
@@ -95,7 +81,6 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 if(CMAKE_SYSTEM_NAME MATCHES iOS OR CMAKE_SYSTEM_NAME MATCHES tvOS)
 	set(CMAKE_SYSTEM_PROCESSOR "aarch64")
 endif()
-
 
 include(deps/cmrc/CMakeRC.cmake)
 
@@ -105,15 +90,11 @@ elseif(EMSCRIPTEN)
 	# required for higher memory, atomics, and threads
 	add_definitions(-pthread)
 	add_definitions(-fexceptions)
-
-	target_link_libraries("${PROJECT_NAME}" PUBLIC
-	"-fexceptions" "-s MAX_WEBGL_VERSION=2" "-s MIN_WEBGL_VERSION=2" "-s FULL_ES3=1" "-s USE_WEBGPU" "-s GL_ASSERTIONS=1" "-s OFFSCREEN_FRAMEBUFFER=1" "-s OFFSCREENCANVAS_SUPPORT=1" "-s GL_DEBUG=1" "-s L[...]
-	)
+	# NOTE: Emscripten-specific linker flags can be added per-backend or at target-level later
 endif()
 
 # call this macro to add IPO to profile and release builds
 macro(rve_enable_IPO target)
-
 	if (MSVC AND RAVENGINE_MSVC_DEBUG_ALL_BUILDS)
 		# don't enable LTO
 	else()
@@ -122,7 +103,6 @@ macro(rve_enable_IPO target)
 			INTERPROCEDURAL_OPTIMIZATION_PROFILE TRUE
 		)
 	endif()
-
 endmacro()
 
 # enable multiprocessor compilation with vs
@@ -135,7 +115,6 @@ if(MSVC)
 endif()
 
 # ============ build machine tools ==============
-
 if(NOT (CMAKE_VS_PLATFORM_NAME STREQUAL ""))
 	if(NOT WIN32 OR (CMAKE_VS_PLATFORM_NAME_DEFAULT STREQUAL CMAKE_VS_PLATFORM_NAME))
 		set(VS_CROSSCOMP OFF CACHE INTERNAL "")
@@ -150,14 +129,12 @@ if (VS_CROSSCOMP AND CMAKE_HOST_WIN32)
 	set(CMAKE_CROSSCOMPILING ON CACHE INTERNAL "" FORCE)
 endif()
 
-# because the above code sometimes just doesn't work??
 if (CMAKE_CROSSCOMPILING OR VS_CROSSCOMP)
 	set(RVE_CROSSCOMP ON CACHE INTERNAL "")
 else()
 	set(RVE_CROSSCOMP OFF CACHE INTERNAL "")
 endif()
 
-# ninja does not use separate config directories for some reason
 if (RVE_CROSSCOMP AND NOT RAVENGINE_SERVER)
 	set(TOOLS_DIR ${CMAKE_BINARY_DIR}/host-tools CACHE INTERNAL "")
 	if (CMAKE_HOST_WIN32)
@@ -228,9 +205,7 @@ if (RVE_CROSSCOMP AND NOT RAVENGINE_SERVER)
 	)
 
 	add_custom_target(flatc DEPENDS "${FlatBuffers_EXECUTABLE}")
-
 	add_custom_target(rvesc DEPENDS "${RVESC_PATH}" flatc)
-
 	add_custom_target(rveac DEPENDS "${RVEAC_PATH}" flatc)
 	add_custom_target(rveskc DEPENDS "${RVESKC_PATH}" flatc)
 	add_custom_target(rvemc DEPENDS "${RVEMC_PATH}" flatc)
@@ -241,15 +216,13 @@ endif()
 
 # ========== Building engine ==============
 
-# get all sources for the library with glob
+# get all sources for the library with recursive glob so nested folders (e.g. src/editor) are picked up
 if(APPLE)
 	# also need to compile Objective-C++ files
 	file(GLOB MM_SOURCES "src/*.mm")
-	set_source_files_properties(${MM_SOURCES} PROPERTIES
-		COMPILE_FLAGS "-x objective-c++ "
-	)
+	set_source_files_properties(${MM_SOURCES} PROPERTIES COMPILE_FLAGS "-x objective-c++ ")
 endif()
-# NOTE: switched to recursive glob so new editor subdir (src/editor/**) and other nested folders are picked up
+
 file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.hpp")
 file(GLOB_RECURSE NATVIS "deps/*.natvis")
 file(GLOB HEADERS "include/${PROJECT_NAME}/*.h" "include/${PROJECT_NAME}/*.hpp" )
@@ -262,13 +235,12 @@ file(GLOB RVE_CMAKES "cmake/*.cmake")
 set_source_files_properties(${SHADERS} ${RVE_CMAKES} PROPERTIES HEADER_FILE_ONLY TRUE)	# prevent VS from compiling these
 source_group("CMake" FILES ${RVE_CMAKES})
 
-
 # register the library
 add_library("${PROJECT_NAME}" ${HEADERS} ${SOURCES} ${MM_SOURCES} ${NATVIS} ${SHADERS} ${RVE_CMAKES})
 rve_enable_IPO(${PROJECT_NAME})
 target_compile_definitions(${PROJECT_NAME} PUBLIC RMLUI_USE_CUSTOM_RTTI=1)
 
-# Link ImGui into the main project so Editor UI files can use ImGui
+# Link ImGui into the main project so Editor UI files can use ImGui.
 # Only link when imgui target exists and not building the headless server
 if (TARGET imgui AND NOT RAVENGINE_SERVER)
 	target_link_libraries("${PROJECT_NAME}" PUBLIC imgui)
@@ -346,7 +318,6 @@ set(CXXOPTS_ENABLE_INSTALL OFF CACHE INTERNAL "")
 add_subdirectory(deps/cxxopts EXCLUDE_FROM_ALL)
 
 # tracy
-#set(TRACY_ENABLE $<IF:$<CONFIG:profile>,ON,OFF> CACHE INTERNAL "")
 set(TRACY_ENABLE ON)
 add_subdirectory(deps/tracy EXCLUDE_FROM_ALL)
 if (RAVENGINE_PROFILE_ALL_BUILDS)
@@ -355,8 +326,7 @@ else()
 	target_link_libraries("${PROJECT_NAME}" PRIVATE $<$<CONFIG:profile>:TracyClient>)
 endif()
 
-
-#SDL
+# SDL
 # ensure library is built correctly for static
 if (NOT RAVENGINE_SERVER)
 	if (NOT ANDROID)
@@ -369,8 +339,7 @@ if (NOT RAVENGINE_SERVER)
 	set(SDL_LIBC ON CACHE BOOL "" FORCE)
 	set(SDL_TESTS OFF CACHE INTERNAL "")
     set(SDL_TEST_LIBRARY OFF CACHE INTERNAL "")
-	set(SDL_REVISION "RVE Vendored SDL" CACHE INTERNAL "") # this prevents re-configures every time a git change occurs: https://github.com/libsdl-org/SDL/issues/9998
-
+	set(SDL_REVISION "RVE Vendored SDL" CACHE INTERNAL "") # prevents re-configures
 	# disable subsystems we don't use
 	set(SDL_GPU OFF CACHE INTERNAL "")
 	set(SDL_RENDER OFF CACHE INTERNAL "")
@@ -378,12 +347,13 @@ if (NOT RAVENGINE_SERVER)
 	set(SDL_OPENGL OFF CACHE INTERNAL "")
 	set(SDL_OPENGLES OFF CACHE INTERNAL "")
 	add_subdirectory(deps/SDL EXCLUDE_FROM_ALL)
-		if(SDL_STATIC)
-			target_link_libraries("${PROJECT_NAME}" PUBLIC SDL3-static)
-		else()
-			target_link_libraries("${PROJECT_NAME}" PUBLIC SDL3-shared)
-		endif()
+	if(SDL_STATIC)
+		target_link_libraries("${PROJECT_NAME}" PUBLIC SDL3-static)
+	else()
+		target_link_libraries("${PROJECT_NAME}" PUBLIC SDL3-shared)
+	endif()
 endif()
+
 if (ANDROID)
 	# SDL android is hardcoded to load "SDL3.so" with no "d" postfix
 	set_target_properties(SDL3-shared PROPERTIES DEBUG_POSTFIX "")
@@ -391,7 +361,7 @@ if (ANDROID)
 	target_link_libraries(SDL3-shared PUBLIC camera2ndk mediandk)
 endif()
 
-# If we included the SDL backend for ImGui and SDL target exists, link it to imgui as well so backends compile
+# If we included the SDL backend for ImGui and SDL target exists, link it to imgui so backend compiles
 if (TARGET imgui)
 	if (TARGET SDL3-static)
 		target_link_libraries(imgui PUBLIC SDL3-static)
@@ -411,7 +381,7 @@ endif()
 # if on a platform other than windows or mac, ensure that an audio backend was found
 if (LINUX AND NOT RAVENGINE_SERVER)
 	find_package(ALSA)
-	find_package(PulseAudio)                                    
+	find_package(PulseAudio)
 	if (NOT ALSA_FOUND AND NOT PulseAudio_FOUND)
 		message(FATAL_ERROR "Either ALSA or PulseAudio dev packages required, but neither were found.")
 	endif()
@@ -458,7 +428,6 @@ if (NOT RVE_CROSSCOMP)
 		LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/RVESC"
 		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/RVESC"
 	)
-
 	set(RVEMC_PATH rvemc CACHE INTERNAL "")
 	set(RVESKC_PATH rveskc CACHE INTERNAL "")
 	set(RVEAC_PATH rveac CACHE INTERNAL "")
@@ -479,7 +448,6 @@ else()
 		PUBLIC "${CMAKE_CURRENT_LIST_DIR}/tools/importlib"
 	)
 endif()
-
 
 if(RVE_CROSSCOMP)
 	set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE INTERNAL "")	# host-tools will build protoc
@@ -560,9 +528,9 @@ SET(RECASTNAVIGATION_EXAMPLES OFF CACHE INTERNAL "")
 add_subdirectory(deps/recastnavigation EXCLUDE_FROM_ALL)
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-set(CMAKE_CXX_STANDARD 17)	# workaround g++ issue with C++20 and PhysX
+	set(CMAKE_CXX_STANDARD 17)	# workaround g++ issue with C++20 and PhysX
 else()
-set(CMAKE_CXX_STANDARD 20)
+	set(CMAKE_CXX_STANDARD 20)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -578,7 +546,7 @@ set(PX_OUTPUT_LIB_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/physx/output_lib/$<CONFI
 set(PX_OUTPUT_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/deps/physx/output_bin/$<CONFIGURATION>" CACHE INTERNAL "")
 set(PX_GENERATE_STATIC_LIBRARIES ON CACHE INTERNAL "")
 set(GPU_LIB_COPIED ON CACHE INTERNAL "")
-#set(PX_FLOAT_POINT_PRECISE_MATH OFF)
+
 if(EMSCRIPTEN)
 	set(TARGET_BUILD_PLATFORM "linux" CACHE INTERNAL "")
 	set(PLATFORM "Linux" CACHE INTERNAL "")
@@ -595,7 +563,6 @@ elseif(LINUX)
 	set(TARGET_BUILD_PLATFORM "linux" CACHE INTERNAL "")
 	set(CMAKE_LIBRARY_ARCHITECTURE "x86_64-linux-gnu" CACHE INTERNAL "")
 	set(PLATFORM "Linux")
-	#set(CMAKE_LIBRARY_ARCHITECTURE "aarch64-linux-gnu" CACHE INTERNAL "")
 elseif(ANDROID)
 	set(TARGET_BUILD_PLATFORM "linux" CACHE INTERNAL "")
 	set(PLATFORM "Linux")
@@ -651,7 +618,6 @@ elseif(ANDROID)
 	target_link_libraries("${PROJECT_NAME}" PUBLIC uuid-android)
 endif()
 
-
 # set server define
 if(RAVENGINE_SERVER)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC "RVE_SERVER=1")
@@ -659,24 +625,13 @@ else()
 	target_compile_definitions(${PROJECT_NAME} PUBLIC "RVE_SERVER=0")
 endif()
 
-# disable RTTI
-# target_compile_definitions(${PROJECT_NAME} PUBLIC "RMLUI_USE_CUSTOM_RTTI")
-# if (NOT MSVC)
-# 	target_compile_options(${PROJECT_NAME} PUBLIC "-fno-rtti")
-# else()
-# 	target_compile_options(${PROJECT_NAME} PUBLIC "/GR-")
-# endif()
-
 include(cmake/rtti.cmake)
 disable_rtti_in_dir("${CMAKE_CURRENT_LIST_DIR}/")
 
-
 # disable the dllimport stuff in RMLUI
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DRMLUI_STATIC_LIB=1 NOMINMAX=1)
-	
-set_target_properties(${PROJECT_NAME} PROPERTIES
-	XCODE_GENERATE_SCHEME ON
-)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES XCODE_GENERATE_SCHEME ON)
 set_source_files_properties(${SHADERS} PROPERTIES XCODE_EXPLICIT_FILE_TYPE "sourcecode.glsl")
 source_group("Shaders" FILES ${SHADERS})
 
@@ -733,7 +688,6 @@ target_include_directories("${PROJECT_NAME}"
 )
 
 # ====================== Linking ====================
-
 if(LINUX)
 	target_link_libraries("${PROJECT_NAME}" PRIVATE atomic)  # need to explicitly link libatomic on linux
 endif()
@@ -761,7 +715,6 @@ target_link_libraries("${PROJECT_NAME}"
 	"SimulationController"
 	"im3d"
 	"physfs-static"
-	#"PhysXGPU"
 	"libnyquist"
 	"GameNetworkingSockets_s"
 	"r8brain"
@@ -784,29 +737,24 @@ target_link_libraries("${PROJECT_NAME}"
 	"concurrentqueue"
 	"ozz_animation"
 	"ozz_base"
-	
 )
 
-# raspberry pi needs this set explicitly, incompatible with other targets 
 if(LINUX)
 	target_link_libraries("${PROJECT_NAME}" PRIVATE "stdc++fs")
 endif()
 
-# copy DLLs
+# copy DLLs (Windows)
 if (WIN32)
-	# PhysX
 	if(NOT PX_GENERATE_STATIC_LIBRARIES)
 		add_custom_command(TARGET "${PROJECT_NAME}" POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_directory
 				"${CMAKE_BINARY_DIR}/deps/bin/win.x86_64.vc142.md/$<CONFIGURATION>"
 				"$<TARGET_FILE_DIR:${PROJECT_NAME}>/$<CONFIGURATION>")
 	endif()
-
 endif()
 
 include(cmake/shaders.cmake)
 include(cmake/pack_resources.cmake)
-
 
 # group libraries and projects
 macro(group_in destination targets)
@@ -826,15 +774,16 @@ macro(enable_unity targets)
 	endforeach()
 endmacro()
 
-# replace the problematic multiline/escaped string
-set(all_unity "LowLevel;SceneQuery;SimulationController;PhysXTask;PhysXCharacterKinematic;im3d;libnyquist;Detour;ozz_animation;ozz_animation_offline;ozz_animation_tools;ozz_base;ozz_geometry;ozz_options;json;libopus;DebugUtils;DetourCrowd;DetourTileCache;harfbuzz")
+set(all_unity 
+"LowLevel;SceneQuery;SimulationController;PhysXTask;PhysXCharacterKinematic;im3d;libnyquist;Detour;ozz_animation;ozz_animation_offline;\
+ozz_animation_tools;ozz_base;ozz_geometry;ozz_options;json;libopus;DebugUtils;DetourCrowd;DetourTileCache;harfbuzz;"
+)
 
 if ((CMAKE_SYSTEM_NAME STREQUAL "Windows"))
-    set(platform_unity "")
+	set(platform_unity "")	 
 endif()
 
-# expand the list variables (don't pass them as quoted single strings)
-enable_unity(${all_unity} ${platform_unity})
+enable_unity("${all_unity}" "${platform_unity}")
 
 # project organization
 SET_PROPERTY(TARGET ${PROJECT_NAME} PROPERTY FOLDER "RavEngine SDK")
@@ -871,9 +820,7 @@ group_in("Libraries/SteamAudio"
 "core;fbschemas;hrtf;phonon;flatc;PFFFT;mysofa-static"
 )
 
-
-
-# tests
+# tests (unchanged)...
 if (RAVENGINE_BUILD_TESTS)
 	if (RAVENGINE_SERVER)
 		include(CTest)
@@ -960,11 +907,6 @@ foreach(TGT ${all_targets})
 			else()
 				target_compile_options(${TGT} PRIVATE "-w")
 			endif()
-
-			#set_target_properties(${TGT} PROPERTIES
-			#	XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH $<$<OR:$<CONFIG:DEBUG>,$<CONFIG:CHECKED>,$<CONFIG:PROFILE>>:YES>
-			#)
-		
 		endif()
 	endif()
 endforeach()
@@ -975,6 +917,4 @@ endif()
 
 if (MSVC AND RAVENGINE_MSVC_DEBUG_ALL_BUILDS)
    enable_debug_all("${CMAKE_CURRENT_LIST_DIR}/")
-
 endif()
-
