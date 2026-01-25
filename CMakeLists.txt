@@ -826,17 +826,15 @@ macro(enable_unity targets)
 	endforeach()
 endmacro()
 
-set(all_unity 
-"LowLevel;SceneQuery;SimulationController;PhysXTask;PhysXCharacterKinematic;im3d;libnyquist;Detour;ozz_animation;ozz_animation_offline;\
-ozz_animation_tools;ozz_base;ozz_geometry;ozz_options;json;libopus;DebugUtils;DetourCrowd;DetourTileCache;harfbuzz;"
-)
+# replace the problematic multiline/escaped string
+set(all_unity "LowLevel;SceneQuery;SimulationController;PhysXTask;PhysXCharacterKinematic;im3d;libnyquist;Detour;ozz_animation;ozz_animation_offline;ozz_animation_tools;ozz_base;ozz_geometry;ozz_options;json;libopus;DebugUtils;DetourCrowd;DetourTileCache;harfbuzz")
 
 if ((CMAKE_SYSTEM_NAME STREQUAL "Windows"))
-	set(platform_unity "")	 
+    set(platform_unity "")
 endif()
 
-enable_unity("${all_unity}"
-"${platform_unity}")
+# expand the list variables (don't pass them as quoted single strings)
+enable_unity(${all_unity} ${platform_unity})
 
 # project organization
 SET_PROPERTY(TARGET ${PROJECT_NAME} PROPERTY FOLDER "RavEngine SDK")
@@ -979,3 +977,4 @@ if (MSVC AND RAVENGINE_MSVC_DEBUG_ALL_BUILDS)
    enable_debug_all("${CMAKE_CURRENT_LIST_DIR}/")
 
 endif()
+
