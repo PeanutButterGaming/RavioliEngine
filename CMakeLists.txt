@@ -30,6 +30,19 @@ else()
 #	endif()
 endif()
 
+#IMGUI
+# Add ImGui files
+set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+)
+target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+
+#endIMGUI
 # ban in-source builds
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
@@ -894,4 +907,5 @@ endif()
 
 if (MSVC AND RAVENGINE_MSVC_DEBUG_ALL_BUILDS)
    enable_debug_all("${CMAKE_CURRENT_LIST_DIR}/")
+
 endif()
