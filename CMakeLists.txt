@@ -30,8 +30,8 @@ else()
 #	endif()
 endif()
 
-#IMGUI
-# Add ImGui files
+# IMGUI
+# Add ImGui core files and automatically include any available backends from deps/imgui/backends
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 add_library(imgui STATIC
     ${IMGUI_DIR}/imgui.cpp
@@ -42,7 +42,53 @@ add_library(imgui STATIC
 )
 target_include_directories(imgui PUBLIC ${IMGUI_DIR})
 
-#endIMGUI
+# auto-include available backends (SDL / OpenGL3 / Vulkan / Metal / Win32 / DX11 / DX12 if present)
+set(IMGUI_BACKENDS_DIR "${IMGUI_DIR}/backends")
+set(IMGUI_BACKEND_SOURCES "")
+if(EXISTS "${IMGUI_BACKENDS_DIR}")
+	# Common backends we care about; add more if needed
+	set(CANDIDATE_BACKENDS
+		"imgui_impl_sdl.cpp;imgui_impl_sdl.h"
+		"imgui_impl_opengl3.cpp;imgui_impl_opengl3.h"
+		"imgui_impl_vulkan.cpp;imgui_impl_vulkan.h"
+		"imgui_impl_metal.mm;imgui_impl_metal.h"
+		"imgui_impl_win32.cpp;imgui_impl_win32.h"
+		"imgui_impl_dx11.cpp;imgui_impl_dx11.h"
+		"imgui_impl_dx12.cpp;imgui_impl_dx12.h"
+	)
+	foreach(pair ${CANDIDATE_BACKENDS})
+		string(REPLACE ";" "|" pair_pipe "${pair}")
+		string(REPLACE "|" ";" pair_list "${pair_pipe}")
+		list(GET pair_list 0 backend_src)
+		list(GET pair_list 1 backend_hdr)
+		if(EXISTS "${IMGUI_BACKENDS_DIR}/${backend_src}")
+			list(APPEND IMGUI_BACKEND_SOURCES "${IMGUI_BACKENDS_DIR}/${backend_src}")
+			# also add header as a source so IDEs show it; mark header as HEADER_FILE_ONLY later if desired
+			if(EXISTS "${IMGUI_BACKENDS_DIR}/${backend_hdr}")
+				list(APPEND IMGUI_BACKEND_SOURCES "${IMGUI_BACKENDS_DIR}/${backend_hdr}")
+			endif()
+		endif()
+	endforeach()
+endif()
+
+if(IMGUI_BACKEND_SOURCES)
+	# make sure imgui target picks them up
+	target_sources(imgui PRIVATE ${IMGUI_BACKEND_SOURCES})
+	# expose backend headers to consumers
+	if(EXISTS "${IMGUI_BACKENDS_DIR}")
+		target_include_directories(imgui PUBLIC "${IMGUI_BACKENDS_DIR}")
+	endif()
+	# If Metal backend is included (.mm), mark it as ObjC++ so it compiles properly on Apple
+	if(EXISTS "${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm")
+		set_source_files_properties("${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm" PROPERTIES LANGUAGE OBJCXX)
+	endif()
+endif()
+
+# Add an alias for convenience
+add_library(ImGui::ImGui ALIAS imgui)
+
+# end IMGUI
+
 # ban in-source builds
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
@@ -343,6 +389,23 @@ if (ANDROID)
 	set_target_properties(SDL3-shared PROPERTIES DEBUG_POSTFIX "")
 	# we get a linker error without this
 	target_link_libraries(SDL3-shared PUBLIC camera2ndk mediandk)
+endif()
+
+# If we included the SDL backend for ImGui and SDL target exists, link it to imgui as well so backends compile
+if (TARGET imgui)
+	if (TARGET SDL3-static)
+		target_link_libraries(imgui PUBLIC SDL3-static)
+	elseif (TARGET SDL3-shared)
+		target_link_libraries(imgui PUBLIC SDL3-shared)
+	endif()
+endif()
+
+# If Vulkan backend source was added and Vulkan is available, link Vulkan to imgui
+if (TARGET imgui AND EXISTS "${IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp")
+	find_package(Vulkan QUIET)
+	if (TARGET Vulkan::Vulkan)
+		target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
+	endif()
 endif()
 
 # if on a platform other than windows or mac, ensure that an audio backend was found
