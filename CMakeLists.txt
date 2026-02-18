@@ -27,52 +27,30 @@ else()
 endif()
 
 # ================= IMGUI ===================
-# Add ImGui core files and automatically include any available backends from deps/imgui/backends
+option(RAVENGINE_ENABLE_IMGUI "Enable Dear ImGui integration" ON)
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
-add_library(imgui STATIC
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
-)
-target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+set(RAVENGINE_IMGUI_AVAILABLE OFF)
 
-# Auto-discover and add ImGui backend implementation files if they exist.
-set(IMGUI_BACKENDS_DIR "${IMGUI_DIR}/backends")
-set(IMGUI_BACKEND_SOURCES "")
-if(EXISTS "${IMGUI_BACKENDS_DIR}")
-	# backend short names to probe; metal uses .mm implementation
-	set(IMGUI_BACKEND_NAMES sdl opengl3 vulkan metal win32 dx11 dx12)
+if (RAVENGINE_ENABLE_IMGUI)
+	if (EXISTS "${IMGUI_DIR}/imgui.cpp")
+		set(RAVENGINE_IMGUI_AVAILABLE ON)
+		set(IMGUI_BACKENDS_DIR "${IMGUI_DIR}/backends")
 
-	foreach(backend ${IMGUI_BACKEND_NAMES})
-		if(backend STREQUAL "metal")
-			set(impl_src "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.mm")
-		else()
-			set(impl_src "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.cpp")
-		endif()
-		set(impl_hdr "${IMGUI_BACKENDS_DIR}/imgui_impl_${backend}.h")
+		add_library(imgui STATIC
+			${IMGUI_DIR}/imgui.cpp
+			${IMGUI_DIR}/imgui_draw.cpp
+			${IMGUI_DIR}/imgui_widgets.cpp
+			${IMGUI_DIR}/imgui_tables.cpp
+			${IMGUI_DIR}/imgui_demo.cpp
+		)
+		target_include_directories(imgui PUBLIC ${IMGUI_DIR})
 
-		if(EXISTS "${impl_src}")
-			list(APPEND IMGUI_BACKEND_SOURCES "${impl_src}")
-			if(EXISTS "${impl_hdr}")
-				list(APPEND IMGUI_BACKEND_SOURCES "${impl_hdr}")
-			endif()
-		endif()
-	endforeach()
-endif()
-
-if(IMGUI_BACKEND_SOURCES)
-	target_sources(imgui PRIVATE ${IMGUI_BACKEND_SOURCES})
-	target_include_directories(imgui PUBLIC "${IMGUI_BACKENDS_DIR}")
-	# Ensure Metal implementation compiles as ObjC++
-	if(EXISTS "${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm")
-		set_source_files_properties("${IMGUI_BACKENDS_DIR}/imgui_impl_metal.mm" PROPERTIES LANGUAGE OBJCXX)
+		# Convenience alias for other CMakeLists
+		add_library(ImGui::ImGui ALIAS imgui)
+	else()
+		message(WARNING "Dear ImGui sources not found at ${IMGUI_DIR}. ImGui integration is disabled. Add imgui sources to deps/imgui to enable it.")
 	endif()
 endif()
-
-# Convenience alias for other CMakeLists
-add_library(ImGui::ImGui ALIAS imgui)
 # ===========================================
 
 # ban in-source builds
@@ -367,14 +345,6 @@ if (TARGET imgui)
 		target_link_libraries(imgui PUBLIC SDL3-static)
 	elseif (TARGET SDL3-shared)
 		target_link_libraries(imgui PUBLIC SDL3-shared)
-	endif()
-endif()
-
-# If Vulkan backend source was added and Vulkan is available, link Vulkan to imgui
-if (TARGET imgui AND EXISTS "${IMGUI_BACKENDS_DIR}/imgui_impl_vulkan.cpp")
-	find_package(Vulkan QUIET)
-	if (TARGET Vulkan::Vulkan)
-		target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
 	endif()
 endif()
 
@@ -855,13 +825,18 @@ if (RAVENGINE_BUILD_TESTS)
 	endif()
 
 	# dummy app
-	if (NOT RAVENGINE_SERVER)
+	if (NOT RAVENGINE_SERVER AND RAVENGINE_IMGUI_AVAILABLE)
 		add_executable("${PROJECT_NAME}_DummyApp" EXCLUDE_FROM_ALL "test/dummyapp.cpp")
 		target_compile_features("${PROJECT_NAME}_DummyApp" PRIVATE cxx_std_23)
-		target_link_libraries("${PROJECT_NAME}_DummyApp" PUBLIC "RavEngine")
-		pack_resources(TARGET "${PROJECT_NAME}_DummyApp"
-			OUTPUT_FILE DATA_PACK
-			# we have no custom assets
+		if (TARGET SDL3-static)
+			target_link_libraries("${PROJECT_NAME}_DummyApp" PUBLIC imgui SDL3-static)
+		elseif (TARGET SDL3-shared)
+			target_link_libraries("${PROJECT_NAME}_DummyApp" PUBLIC imgui SDL3-shared)
+		endif()
+		target_include_directories("${PROJECT_NAME}_DummyApp" PRIVATE "${IMGUI_DIR}" "${IMGUI_BACKENDS_DIR}")
+		target_sources("${PROJECT_NAME}_DummyApp" PRIVATE
+			"${IMGUI_BACKENDS_DIR}/imgui_impl_sdl3.cpp"
+			"${IMGUI_BACKENDS_DIR}/imgui_impl_sdlrenderer3.cpp"
 		)
 
 		set_target_properties("${PROJECT_NAME}_DummyApp" 
@@ -873,6 +848,8 @@ if (RAVENGINE_BUILD_TESTS)
 			VS_WINDOWS_TARGET_PLATFORM_VERSION "10.0.19041.0"				# be runnable on Windows 10
 			VS_WINDOWS_TARGET_PLATFORM_MIN_VERSION "10.0.19041.0"
 		)
+	elseif (NOT RAVENGINE_SERVER)
+		message(WARNING "Skipping ${PROJECT_NAME}_DummyApp: Dear ImGui source files are unavailable.")
 	endif()
 endif()
 

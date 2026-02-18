@@ -1,41 +1,77 @@
-#include <RavEngine/App.hpp>
-#include <RavEngine/StaticMesh.hpp>
-#include <RavEngine/World.hpp>
-#include <RavEngine/Dialogs.hpp>
-#include <RavEngine/StartApp.hpp>
-#include <RavEngine/MeshCollection.hpp>
+#include <imgui.h>
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_sdlrenderer3.h>
 
-using namespace RavEngine;
-using namespace std;
+#include <SDL3/SDL.h>
+#include <cstdio>
 
-struct DummyApp : public RavEngine::App {
-	void OnStartup(int argc, char** argv) final;
-	void OnFatal(const std::string_view msg) final {
-		RavEngine::Dialog::ShowBasic("Fatal Error", msg, Dialog::MessageBoxType::Error);
-	}
-};
+int main(int, char**) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMEPAD)) {
+        std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
+    }
 
-struct DummyWorld : public RavEngine::World {
-};
+    SDL_Window* window = SDL_CreateWindow("RavEngine ImGui Demo", 1280, 720, SDL_WINDOW_RESIZABLE);
+    if (!window) {
+        std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
 
-// We've defined a world, but now we need to load it. OnStartup is a good place to load your initial world.
-void DummyApp::OnStartup(int argc, char** argv) {
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    if (!renderer) {
+        std::fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
 
-	// You can rename the window via this App method.
-	SetWindowTitle("Hello RavEngine!");
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
 
-	// Make an instance of the world. RavEngine provides the New<T> helper to allocate
-	// resources which the engine does not direclty reference. The return value is an owning pointer,
-	// so be careful about storing references to worlds in Components, to avoid reference cycles. 
-	auto level = RavEngine::New<DummyWorld>();
+    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer3_Init(renderer);
 
-	// Tell the engine to switch to this world.
-	// If the engine has no worlds active, it will automatically set the first one as the active (rendered) world.
-	// You can have multiple worlds loaded and ticking at once, but only one world can be the active world. 
-	AddWorld(level);
+    bool running = true;
+    while (running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            if (event.type == SDL_EVENT_QUIT) {
+                running = false;
+            }
+            if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window)) {
+                running = false;
+            }
+        }
+
+        ImGui_ImplSDLRenderer3_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("RavEngine + Dear ImGui");
+        ImGui::Text("Dear ImGui is integrated and running.");
+        ImGui::Separator();
+        ImGui::Text("Frame time: %.3f ms", 1000.0f / io.Framerate);
+        ImGui::Text("FPS: %.1f", io.Framerate);
+        ImGui::End();
+
+        ImGui::Render();
+        SDL_SetRenderDrawColor(renderer, 18, 18, 18, 255);
+        SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
+        SDL_RenderPresent(renderer);
+    }
+
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
 }
-
-// Last thing - we need to launch our application. RavEngine supplies a convenience macro for this,
-// which simply inlines a main function that allocates and launches your app, then invokes its OnStartup method.
-// You do not need to use this macro if you don't want to.
-START_APP(DummyApp)
