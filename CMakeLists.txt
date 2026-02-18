@@ -826,7 +826,7 @@ if (RAVENGINE_BUILD_TESTS)
 
 	# dummy app
 	if (NOT RAVENGINE_SERVER AND RAVENGINE_IMGUI_AVAILABLE)
-		add_executable("${PROJECT_NAME}_DummyApp" EXCLUDE_FROM_ALL "test/dummyapp.cpp")
+		add_executable("${PROJECT_NAME}_DummyApp" "test/dummyapp.cpp")
 		target_compile_features("${PROJECT_NAME}_DummyApp" PRIVATE cxx_std_23)
 		if (TARGET SDL3-static)
 			target_link_libraries("${PROJECT_NAME}_DummyApp" PUBLIC imgui SDL3-static)
